@@ -1,0 +1,16 @@
+{
+  "name": "contentfull-management-api",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "contentful-management": "^11.35.1",
+    "dotenv": "^16.4.5"
+  }
+}
