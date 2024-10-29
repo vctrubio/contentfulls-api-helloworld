@@ -3,12 +3,132 @@ const fs = require('fs').promises;
 const path = require('path');
 const { parseTemplateFile, listContentTypes, getContentModelFields, parsePhotos, checkApiEndpoint, getContentTypeFields } = require('./utils');
 
+async function uploadPhoto(environment, photoPath) {
+    try {
+        const fileName = path.basename(photoPath);
+        const extension = path.extname(fileName).toLowerCase();
+        
+        // Validate file extension
+        const validExtensions = ['.jpg', '.jpeg', '.png'];
+        if (!validExtensions.includes(extension)) {
+            console.warn(`Skipping invalid file type: ${fileName}`);
+            return null;
+        }
 
+        // Normalize content type for all jpeg/jpg files
+        const contentType = extension === '.png' ? 'image/png' : 'image/jpeg';
 
+        // Read file
+        const fileBuffer = await fs.readFile(photoPath);
+        const fileSizeInMB = fileBuffer.length / (1024 * 1024);
+        
+        // Log file info
+        console.log(`Processing ${fileName} (${fileSizeInMB.toFixed(2)}MB)`);
 
-async function postMuralEntry(templateData, photos) {
-    const fields = await getContentTypeFields('mural');
-    console.log('Posting mural entry with data:', templateData);
+        // Create upload first
+        console.log('Creating upload...');
+        const upload = await environment.createUpload({
+            file: fileBuffer
+        });
+
+        // Create the asset with correct link type
+        console.log(`Creating asset for ${fileName}...`);
+        const asset = await environment.createAsset({
+            fields: {
+                title: {
+                    'en-US': fileName
+                },
+                description: {
+                    'en-US': `Photo for mural: ${fileName}`
+                },
+                file: {
+                    'en-US': {
+                        contentType: contentType,
+                        fileName: fileName,
+                        upload: `https://upload.contentful.com/spaces/${process.env.CONTENTFUL_SPACE_ID}/uploads/${upload.sys.id}`
+                    }
+                }
+            }
+        });
+
+        // Process and publish the asset
+        console.log('Processing asset...');
+        const processedAsset = await asset.processForAllLocales();
+        console.log('Publishing asset...');
+        const publishedAsset = await processedAsset.publish();
+
+        console.log(`Successfully uploaded and published photo: ${fileName}`);
+        return publishedAsset;
+    } catch (error) {
+        console.error('Error uploading photo:', error);
+        console.error('Photo path:', photoPath);
+        throw error;
+    }
+}
+
+async function postMuralEntry(templateData, photos, dirPath) {
+    try {
+        const client = contentful.createClient({
+            accessToken: process.env.CONTENTFUL_MANAGEMENT_TOKEN
+        });
+
+        const space = await client.getSpace(process.env.CONTENTFUL_SPACE_ID);
+        const environment = await space.getEnvironment('master');
+
+        // Upload photos first
+        const photoAssets = [];
+        for (const photo of photos) {
+            const photoPath = path.join(dirPath, photo);
+            console.log('\nUploading photo:', photo);
+            const asset = await uploadPhoto(environment, photoPath);
+            if (asset) {  // Only add successfully uploaded assets
+                photoAssets.push({
+                    sys: {
+                        type: 'Link',
+                        linkType: 'Asset',
+                        id: asset.sys.id
+                    }
+                });
+            }
+        }
+
+        // Format the entry data according to Contentful's structure
+        const entryData = {
+            fields: {
+                title: {
+                    'en-US': templateData.Title
+                },
+                location: {
+                    'en-US': templateData.Location
+                },
+                description: {
+                    'en-US': templateData.Description
+                },
+                category: {
+                    'en-US': templateData.Category
+                },
+                url: {
+                    'en-US': ''
+                },
+                photos: {
+                    'en-US': photoAssets 
+                }
+            }
+        };
+
+        console.log('Creating entry with data:', JSON.stringify(entryData, null, 2));
+        const entry = await environment.createEntry('mural', entryData);
+        
+        // Publish the entry
+        const publishedEntry = await entry.publish();
+        
+        console.log('Entry created and published with ID:', publishedEntry.sys.id);
+        return publishedEntry;
+
+    } catch (error) {
+        console.error('Error creating mural entry:', error);
+        throw error;
+    }
 }
 
 // Function to process all templates in the directory
@@ -32,9 +152,9 @@ async function processTemplateDirectory(directoryPath) {
                 console.log('Template data:', templateData);
                 console.log('Photos found:', photos);
                 // Post the mural entry with template data
-                const createdEntry = await postMuralEntry(templateData, photos);
+                const createdEntry = await postMuralEntry(templateData, photos, fullDirPath);
                 if (createdEntry) {
-                    console.log('Successfully created mural entry');
+                    console.log('Successfully created mural entry with photos');
                 } else {
                     console.log('Failed to create mural entry');
                 }
