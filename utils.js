@@ -7,6 +7,23 @@ const client = contentful.createClient({
     accessToken: process.env.CONTENTFUL_MANAGEMENT_TOKEN
 });
 
+async function parsePhotos(directoryPath) {
+    try {
+        const files = await fs.readdir(directoryPath);
+
+        // Filter out template.txt and get only files (not directories)
+        const photoFiles = files.filter(file =>
+            file !== 'template.txt' &&
+            !file.startsWith('.') // Exclude hidden files
+        );
+
+        // console.log(`Found ${photoFiles.length} photos in directory: ${directoryPath}`);
+        return photoFiles;
+    } catch (error) {
+        console.error('Error parsing photos:', error);
+        return [];
+    }
+}
 
 async function parseTemplateFile(filePath) {
     try {
@@ -94,18 +111,18 @@ async function getContentTypeFields(contentTypeId) {
 async function checkApiEndpoint() {
     try {
         const space = await client.getSpace(process.env.CONTENTFUL_SPACE_ID);
-        
+
         // Get the space details which includes the API information
         const spaceDetails = space.toPlainObject();
-        
+
         console.log('Space ID:', spaceDetails.sys.id);
         console.log('Space Environment:', spaceDetails.sys.environment);
         console.log('API Type:', spaceDetails.sys.type);
         console.log('API Version:', spaceDetails.sys.version);
-        
+
         // The Management API always uses api.contentful.com
         console.log('API Base URL: https://api.contentful.com');
-        
+
         return 'https://api.contentful.com';
     } catch (error) {
         console.error('Error checking API endpoint:', error);
@@ -124,22 +141,45 @@ async function helloWorld() {
     }
 }
 
-async function parsePhotos(directoryPath) {
+async function fetchAllContent() {
     try {
-        const files = await fs.readdir(directoryPath);
+        const space = await client.getSpace(process.env.CONTENTFUL_SPACE_ID);
+        const environment = await space.getEnvironment('master');
 
-        // Filter out template.txt and get only files (not directories)
-        const photoFiles = files.filter(file =>
-            file !== 'template.txt' &&
-            !file.startsWith('.') // Exclude hidden files
-        );
+        // Get all content types first
+        const contentTypes = await environment.getContentTypes();
+        
+        // Store results for each content type
+        const allContent = {};
 
-        // console.log(`Found ${photoFiles.length} photos in directory: ${directoryPath}`);
-        return photoFiles;
+        // Fetch entries for each content type
+        for (const contentType of contentTypes.items) {
+            console.log(`Fetching entries for content type: ${contentType.name}`);
+            
+            const entries = await environment.getEntries({
+                content_type: contentType.sys.id
+            });
+
+            allContent[contentType.name] = {
+                contentTypeId: contentType.sys.id,
+                fields: contentType.fields.map(field => ({
+                    id: field.id,
+                    name: field.name,
+                    type: field.type
+                })),
+                entries: entries.items.map(entry => ({
+                    id: entry.sys.id,
+                    fields: entry.fields
+                }))
+            };
+        }
+
+        console.log('Content types found:', Object.keys(allContent));
+        return allContent;
     } catch (error) {
-        console.error('Error parsing photos:', error);
-        return [];
+        console.error('Error fetching content:', error);
+        throw error;
     }
 }
 
-module.exports = { parseTemplateFile, listContentTypes, getContentModelFields, getContentTypeFields, helloWorld, parsePhotos, checkApiEndpoint };
+module.exports = { parseTemplateFile, listContentTypes, getContentModelFields, getContentTypeFields, helloWorld, parsePhotos, checkApiEndpoint, fetchAllContent };

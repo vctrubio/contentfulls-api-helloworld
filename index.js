@@ -1,7 +1,7 @@
 const contentful = require('contentful-management');
 const fs = require('fs').promises;
 const path = require('path');
-const { parseTemplateFile, listContentTypes, getContentModelFields, parsePhotos, checkApiEndpoint, getContentTypeFields } = require('./utils');
+const { parseTemplateFile, listContentTypes, getContentModelFields, parsePhotos, checkApiEndpoint, getContentTypeFields, fetchAllContent } = require('./utils');
 
 async function waitForAssetProcessing(asset, maxAttempts = 10) {
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
@@ -186,11 +186,46 @@ async function processTemplateDirectory(directoryPath) {
 
 async function trigger() {
     const directoryPath = path.join(__dirname, 'contentfull_data_post');
+
     try {
-        await processTemplateDirectory(directoryPath);
-        console.log('All templates processed successfully');
+        // Fetch all content first
+        console.log('\nFetching all existing content...');
+        const allContent = await fetchAllContent();
+        
+        // Log summary of content
+        Object.entries(allContent).forEach(([contentTypeName, data]) => {
+            console.log(`\n${contentTypeName}:`);
+            console.log(`- Total entries: ${data.entries.length}`);
+            console.log('- Fields:', data.fields.map(f => f.name).join(', '));
+        });
+        // Check if Mural content type exists and log detailed information
+        if (allContent['Mural']) {
+            console.log('\nDetailed Mural Entries:');
+            allContent['Mural'].entries.forEach((entry, index) => {
+                console.log(`\nMural Entry ${index + 1}:`);
+                Object.entries(entry.fields).forEach(([fieldName, fieldValue]) => {
+                    if (fieldValue['en-US']) {
+                        if (Array.isArray(fieldValue['en-US'])) {
+                            console.log(`${fieldName}:`, fieldValue['en-US'].length > 0 ? 
+                                `[${fieldValue['en-US'].map(item => 
+                                    item.sys ? `Asset ID: ${item.sys.id}` : item
+                                ).join(', ')}]` : '[]'
+                            );
+                        } else {
+                            console.log(`${fieldName}:`, fieldValue['en-US']);
+                        }
+                    }
+                });
+            });
+        }
+
+        // Process new content if needed
+        // console.log('\nProcessing new content...');
+        // await processTemplateDirectory(directoryPath);
+        // console.log('All templates processed successfully');
+
     } catch (error) {
-        console.error('Error processing templates:', error);
+        console.error('Error in trigger function:', error);
     }
 }
 
