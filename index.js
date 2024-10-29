@@ -3,25 +3,41 @@ const fs = require('fs').promises;
 const path = require('path');
 const { parseTemplateFile, listContentTypes, getContentModelFields, parsePhotos, checkApiEndpoint, getContentTypeFields } = require('./utils');
 
+async function waitForAssetProcessing(asset, maxAttempts = 10) {
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+        try {
+            console.log(`Processing attempt ${attempt + 1}/${maxAttempts}...`);
+            const processedAsset = await asset.processForAllLocales();
+            return processedAsset;
+        } catch (error) {
+            if (attempt === maxAttempts - 1) {
+                throw error;
+            }
+            // Wait for 2 seconds before next attempt (increases with each attempt)
+            const waitTime = 2000 * (attempt + 1);
+            console.log(`Waiting ${waitTime / 1000} seconds before next attempt...`);
+            await new Promise(resolve => setTimeout(resolve, waitTime));
+        }
+    }
+}
+
 async function uploadPhoto(environment, photoPath) {
     try {
         const fileName = path.basename(photoPath);
         const extension = path.extname(fileName).toLowerCase();
-        
-        // Validate file extension
+
         const validExtensions = ['.jpg', '.jpeg', '.png'];
         if (!validExtensions.includes(extension)) {
             console.warn(`Skipping invalid file type: ${fileName}`);
             return null;
         }
 
-        // Normalize content type for all jpeg/jpg files
         const contentType = extension === '.png' ? 'image/png' : 'image/jpeg';
 
         // Read file
         const fileBuffer = await fs.readFile(photoPath);
         const fileSizeInMB = fileBuffer.length / (1024 * 1024);
-        
+
         // Log file info
         console.log(`Processing ${fileName} (${fileSizeInMB.toFixed(2)}MB)`);
 
@@ -51,9 +67,9 @@ async function uploadPhoto(environment, photoPath) {
             }
         });
 
-        // Process and publish the asset
         console.log('Processing asset...');
-        const processedAsset = await asset.processForAllLocales();
+        const processedAsset = await waitForAssetProcessing(asset);
+
         console.log('Publishing asset...');
         const publishedAsset = await processedAsset.publish();
 
@@ -111,17 +127,17 @@ async function postMuralEntry(templateData, photos, dirPath) {
                     'en-US': ''
                 },
                 photos: {
-                    'en-US': photoAssets 
+                    'en-US': photoAssets
                 }
             }
         };
 
         console.log('Creating entry with data:', JSON.stringify(entryData, null, 2));
         const entry = await environment.createEntry('mural', entryData);
-        
+
         // Publish the entry
         const publishedEntry = await entry.publish();
-        
+
         console.log('Entry created and published with ID:', publishedEntry.sys.id);
         return publishedEntry;
 
