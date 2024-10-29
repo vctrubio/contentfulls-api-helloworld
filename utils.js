@@ -3,6 +3,11 @@ const contentful = require('contentful-management');
 require('dotenv').config();
 const path = require('path');
 
+const client = contentful.createClient({
+    accessToken: process.env.CONTENTFUL_MANAGEMENT_TOKEN
+});
+
+
 async function parseTemplateFile(filePath) {
     try {
         const content = await fs.readFile(filePath, 'utf-8');
@@ -17,7 +22,7 @@ async function parseTemplateFile(filePath) {
                 if (match) {
                     const fieldName = match[1].trim();
                     const fieldValue = match[2].trim();
-                    fields[fieldName.toLowerCase()] = fieldValue;
+                    fields[fieldName] = fieldValue;
                 }
             }
         });
@@ -89,14 +94,19 @@ async function getContentTypeFields(contentTypeId) {
 async function checkApiEndpoint() {
     try {
         const space = await client.getSpace(process.env.CONTENTFUL_SPACE_ID);
-
-        // Get the raw HTTP client to inspect the API URL
-        const rawClient = client.getHttpClient();
-
-        console.log('API Base URL:', rawClient.defaults.baseURL);
-        console.log('Space Endpoint:', space.toPlainObject().sys.endpoint);
-
-        return rawClient.defaults.baseURL;
+        
+        // Get the space details which includes the API information
+        const spaceDetails = space.toPlainObject();
+        
+        console.log('Space ID:', spaceDetails.sys.id);
+        console.log('Space Environment:', spaceDetails.sys.environment);
+        console.log('API Type:', spaceDetails.sys.type);
+        console.log('API Version:', spaceDetails.sys.version);
+        
+        // The Management API always uses api.contentful.com
+        console.log('API Base URL: https://api.contentful.com');
+        
+        return 'https://api.contentful.com';
     } catch (error) {
         console.error('Error checking API endpoint:', error);
     }
@@ -114,7 +124,7 @@ async function helloWorld() {
     }
 }
 
-async function parsePhotosToFiles(directoryPath) {
+async function parsePhotos(directoryPath) {
     try {
         const files = await fs.readdir(directoryPath);
 
@@ -132,4 +142,4 @@ async function parsePhotosToFiles(directoryPath) {
     }
 }
 
-module.exports = { parseTemplateFile, listContentTypes, getContentModelFields, helloWorld, parsePhotosToFiles };
+module.exports = { parseTemplateFile, listContentTypes, getContentModelFields, getContentTypeFields, helloWorld, parsePhotos, checkApiEndpoint };
