@@ -19,7 +19,7 @@ async function waitForAssetProcessing(asset, maxAttempts = 2) {
             if (attempt === maxAttempts - 1) {
                 throw error;
             }
-            // Wait for 2 seconds before next attempt (increases with each attempt)
+
             const waitTime = 2000 * (attempt + 1);
             console.log(`Waiting ${waitTime / 1000} seconds before next attempt...`);
             await new Promise(resolve => setTimeout(resolve, waitTime));
@@ -100,19 +100,19 @@ async function initializeContentful() {
         });
         contentfulSpace = await contentfulClient.getSpace(process.env.CONTENTFUL_SPACE_ID);
         contentfulEnvironment = await contentfulSpace.getEnvironment('master');
-        
+
         // Fetch all existing mural titles
         console.log('Fetching existing mural titles...');
         const entries = await contentfulEnvironment.getEntries({
             content_type: 'mural'
         });
-        
+
         existingTitles = new Set(
             entries.items
                 .map(entry => entry.fields.title?.['en-US'])
                 .filter(title => title) // Remove any undefined titles
         );
-        
+
         console.log(`Cached ${existingTitles.size} existing titles`);
     }
     return { client: contentfulClient, space: contentfulSpace, environment: contentfulEnvironment };
@@ -152,7 +152,6 @@ async function postMuralEntry(templateData, photos, dirPath) {
             }
         }
 
-        // Format the entry data according to Contentful's structure
         const entryData = {
             fields: {
                 title: {
@@ -179,10 +178,8 @@ async function postMuralEntry(templateData, photos, dirPath) {
         console.log('Creating entry with data:', JSON.stringify(entryData, null, 2));
         const entry = await environment.createEntry('mural', entryData);
 
-        // Publish the entry
         const publishedEntry = await entry.publish();
 
-        // Add the new title to our cached Set
         existingTitles.add(templateData.Title);
 
         console.log('Entry created and published with ID:', publishedEntry.sys.id);
@@ -212,7 +209,7 @@ async function processTemplateDirectory(directoryPath = path.join(__dirname, 'co
                 console.log(`Directory ${dir}:`);
                 console.log('Template data:', templateData);
                 console.log('Photos found:', photos);
-                
+
                 const createdEntry = await postMuralEntry(templateData, photos, fullDirPath);
                 if (createdEntry) {
                     console.log('Successfully created mural entry with photos');
@@ -226,7 +223,7 @@ async function processTemplateDirectory(directoryPath = path.join(__dirname, 'co
             }
         }
 
-        return processedCount; // Return the number of processed entries
+        return processedCount; 
     } catch (error) {
         console.error('Error processing directory:', error);
         throw error;
@@ -234,10 +231,7 @@ async function processTemplateDirectory(directoryPath = path.join(__dirname, 'co
 }
 
 async function trigger(flag = true) {
-    const directoryPath = path.join(__dirname, 'contentfull_data_post');
-
     try {
-        // Fetch all content first
         if (flag) {
             console.log('\nFetching all existing content...');
             const allContent = await fetchAllContent();
@@ -269,11 +263,6 @@ async function trigger(flag = true) {
                 });
             }
         }
-
-        // console.log('\nProcessing new content...');
-        // await processTemplateDirectory(directoryPath);
-        // console.log('All templates processed successfully');
-
     } catch (error) {
         console.error('Error in trigger function:', error);
     }
@@ -310,7 +299,6 @@ async function main() {
     console.log('hello n welcome.')
 
     try {
-        // Initialize Contentful connection and cache titles at startup
         await initializeContentful();
 
         const args = process.argv.slice(2);
@@ -351,26 +339,22 @@ async function main() {
         // Cleanup and exit
         if (contentfulClient) {
             console.log('Cleaning up connections...');
-            // Add any necessary cleanup for contentful client
         }
         console.log('Done. Exiting...');
         process.exit(0);
     }
 }
 
-// Handle unhandled rejections
 process.on('unhandledRejection', (error) => {
     console.error('Unhandled rejection:', error);
     process.exit(1);
 });
 
-// Handle uncaught exceptions
 process.on('uncaughtException', (error) => {
     console.error('Uncaught exception:', error);
     process.exit(1);
 });
 
-// If you want to handle cleanup on SIGINT (Ctrl+C)
 process.on('SIGINT', () => {
     console.log('\nReceived SIGINT. Cleaning up...');
     process.exit(0);
@@ -380,6 +364,3 @@ main().catch(error => {
     console.error('Fatal error:', error);
     process.exit(1);
 });
-
-
-const directoryPath = path.join(__dirname, 'contentfull_data_post');
