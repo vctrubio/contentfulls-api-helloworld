@@ -266,7 +266,7 @@ async function main() {
     try {
         switch (command) {
             case 'trigger':
-                await triggera();
+                await trigger();
                 break;
             case 'checkApi':
                 await checkApiAndContentTypes();
