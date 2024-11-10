@@ -1,7 +1,13 @@
 const contentful = require('contentful-management');
 const fs = require('fs').promises;
 const path = require('path');
-const { parseTemplateFile, listContentTypes, getContentModelFields, parsePhotos, checkApiEndpoint, getContentTypeFields, fetchAllContent } = require('./utils');
+const { parseTemplateFile, listContentTypes, getContentModelFields, parsePhotos, checkApiEndpoint, getContentTypeFields, fetchAllContent, confirmDeletion, deleteAllEntriesOfType } = require('./utils');
+const process = require('process');
+
+let existingTitles = new Set(); // Store existing titles
+let contentfulClient = null;
+let contentfulSpace = null;
+let contentfulEnvironment = null;
 
 async function waitForAssetProcessing(asset, maxAttempts = 2) {
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
@@ -87,14 +93,47 @@ async function uploadPhoto(environment, photoPath) {
     }
 }
 
-async function postMuralEntry(templateData, photos, dirPath) {
-    try {
-        const client = contentful.createClient({
+async function initializeContentful() {
+    if (!contentfulClient) {
+        contentfulClient = contentful.createClient({
             accessToken: process.env.CONTENTFUL_MANAGEMENT_TOKEN
         });
+        contentfulSpace = await contentfulClient.getSpace(process.env.CONTENTFUL_SPACE_ID);
+        contentfulEnvironment = await contentfulSpace.getEnvironment('master');
+        
+        // Fetch all existing mural titles
+        console.log('Fetching existing mural titles...');
+        const entries = await contentfulEnvironment.getEntries({
+            content_type: 'mural'
+        });
+        
+        existingTitles = new Set(
+            entries.items
+                .map(entry => entry.fields.title?.['en-US'])
+                .filter(title => title) // Remove any undefined titles
+        );
+        
+        console.log(`Cached ${existingTitles.size} existing titles`);
+    }
+    return { client: contentfulClient, space: contentfulSpace, environment: contentfulEnvironment };
+}
 
-        const space = await client.getSpace(process.env.CONTENTFUL_SPACE_ID);
-        const environment = await space.getEnvironment('master');
+async function postMuralEntry(templateData, photos, dirPath) {
+    try {
+        // Use cached Contentful connection
+        const { environment } = await initializeContentful();
+
+        // Check if title exists using the cached Set
+        if (existingTitles.has(templateData.Title)) {
+            console.log(`Entry with title "${templateData.Title}" already exists. Skipping...`);
+            return null;
+        }
+
+        // Create URL-friendly version of the title
+        const urlFriendlyTitle = templateData.Title.toLowerCase()
+            .replace(/\s+/g, '-')           // Replace spaces with -
+            .replace(/[^a-z0-9-]/g, '')     // Remove any non-alphanumeric characters except -
+            .replace(/-+/g, '-');           // Replace multiple - with single -
 
         // Upload photos first
         const photoAssets = [];
@@ -102,7 +141,7 @@ async function postMuralEntry(templateData, photos, dirPath) {
             const photoPath = path.join(dirPath, photo);
             console.log('\nUploading photo:', photo);
             const asset = await uploadPhoto(environment, photoPath);
-            if (asset) {  // Only add successfully uploaded assets
+            if (asset) {
                 photoAssets.push({
                     sys: {
                         type: 'Link',
@@ -110,9 +149,6 @@ async function postMuralEntry(templateData, photos, dirPath) {
                         id: asset.sys.id
                     }
                 });
-            }
-            else{
-                console.log(`BIG FAT ERROR:Failed to upload photo: ${photo}`);
             }
         }
 
@@ -132,7 +168,7 @@ async function postMuralEntry(templateData, photos, dirPath) {
                     'en-US': templateData.Category
                 },
                 url: {
-                    'en-US': ''
+                    'en-US': urlFriendlyTitle
                 },
                 photos: {
                     'en-US': photoAssets
@@ -145,6 +181,9 @@ async function postMuralEntry(templateData, photos, dirPath) {
 
         // Publish the entry
         const publishedEntry = await entry.publish();
+
+        // Add the new title to our cached Set
+        existingTitles.add(templateData.Title);
 
         console.log('Entry created and published with ID:', publishedEntry.sys.id);
         return publishedEntry;
@@ -159,26 +198,25 @@ async function postMuralEntry(templateData, photos, dirPath) {
 async function processTemplateDirectory(directoryPath = path.join(__dirname, 'contentfull_data_post')) {
     try {
         const directories = await fs.readdir(directoryPath);
+        let processedCount = 0;
 
         for (const dir of directories) {
             const fullDirPath = path.join(directoryPath, dir);
             const templatePath = path.join(fullDirPath, 'template.txt');
 
             try {
-                // Get template data
                 const templateData = await parseTemplateFile(templatePath);
-
-                // Get photos in the same directory
                 const photos = await parsePhotos(fullDirPath);
 
                 console.log('\x1b[33m%s\x1b[0m', '----------------------------------------');
                 console.log(`Directory ${dir}:`);
                 console.log('Template data:', templateData);
                 console.log('Photos found:', photos);
-                // Post the mural entry with template data
+                
                 const createdEntry = await postMuralEntry(templateData, photos, fullDirPath);
                 if (createdEntry) {
                     console.log('Successfully created mural entry with photos');
+                    processedCount++;
                 } else {
                     console.log('Failed to create mural entry');
                 }
@@ -187,8 +225,11 @@ async function processTemplateDirectory(directoryPath = path.join(__dirname, 'co
                 continue;
             }
         }
+
+        return processedCount; // Return the number of processed entries
     } catch (error) {
         console.error('Error processing directory:', error);
+        throw error;
     }
 }
 
@@ -264,34 +305,81 @@ async function checkApiAndContentTypes() {
     }
 }
 
+
 async function main() {
     console.log('hello n welcome.')
 
-    const args = process.argv.slice(2);
-    const command = args[0]; // The first argument is the command
-
     try {
+        // Initialize Contentful connection and cache titles at startup
+        await initializeContentful();
+
+        const args = process.argv.slice(2);
+        const command = args[0];
+        const contentType = args[1];
+
         switch (command) {
             case 'trigger':
                 await trigger();
                 break;
             case 'pt':
-                await processTemplateDirectory();
+                const processedCount = await processTemplateDirectory();
+                console.log(`Processed ${processedCount} entries successfully`);
                 break;
             case 'checkApi':
                 await checkApiAndContentTypes();
                 break;
+            case 'delete':
+                if (!contentType) {
+                    console.error('Please specify a content type to delete. Example: node index.js delete mural');
+                    break;
+                }
+                const confirmed = await confirmDeletion(contentType);
+                if (confirmed) {
+                    await deleteAllEntriesOfType(contentType);
+                } else {
+                    console.log('Deletion cancelled.');
+                }
+                break;
             default:
                 console.log('\x1b[31m%s\x1b[0m', `Unknown command: ${command}`);
-                console.log('Available commands: trigger, checkApi, processTemplates');
+                console.log('Available commands: trigger, checkApi, processTemplates, delete');
                 break;
         }
     } catch (error) {
-        console.error('Error executing command:', error); //error is an object that can be unpacked with .message and .stack ...
+        console.error('Error executing command:', error);
+    } finally {
+        // Cleanup and exit
+        if (contentfulClient) {
+            console.log('Cleaning up connections...');
+            // Add any necessary cleanup for contentful client
+        }
+        console.log('Done. Exiting...');
+        process.exit(0);
     }
 }
 
-main();
+// Handle unhandled rejections
+process.on('unhandledRejection', (error) => {
+    console.error('Unhandled rejection:', error);
+    process.exit(1);
+});
+
+// Handle uncaught exceptions
+process.on('uncaughtException', (error) => {
+    console.error('Uncaught exception:', error);
+    process.exit(1);
+});
+
+// If you want to handle cleanup on SIGINT (Ctrl+C)
+process.on('SIGINT', () => {
+    console.log('\nReceived SIGINT. Cleaning up...');
+    process.exit(0);
+});
+
+main().catch(error => {
+    console.error('Fatal error:', error);
+    process.exit(1);
+});
 
 
 const directoryPath = path.join(__dirname, 'contentfull_data_post');

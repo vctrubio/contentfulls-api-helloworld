@@ -1,6 +1,11 @@
 const fs = require('fs').promises;
 const contentful = require('contentful-management');
 require('dotenv').config();
+const readline = require('readline').createInterface({
+    input: process.stdin,
+    output: process.stdout
+});
+
 const path = require('path');
 
 const client = contentful.createClient({
@@ -148,14 +153,14 @@ async function fetchAllContent() {
 
         // Get all content types first
         const contentTypes = await environment.getContentTypes();
-        
+
         // Store results for each content type
         const allContent = {};
 
         // Fetch entries for each content type
         for (const contentType of contentTypes.items) {
             console.log(`Fetching entries for content type: ${contentType.name}`);
-            
+
             const entries = await environment.getEntries({
                 content_type: contentType.sys.id
             });
@@ -182,4 +187,66 @@ async function fetchAllContent() {
     }
 }
 
-module.exports = { parseTemplateFile, listContentTypes, getContentModelFields, getContentTypeFields, helloWorld, parsePhotos, checkApiEndpoint, fetchAllContent };
+
+async function deleteAllEntriesOfType(contentTypeName) {
+    try {
+        console.log(`Starting deletion of all ${contentTypeName} entries...`);
+
+        const client = contentful.createClient({
+            accessToken: process.env.CONTENTFUL_MANAGEMENT_TOKEN
+        });
+
+        const space = await client.getSpace(process.env.CONTENTFUL_SPACE_ID);
+        const environment = await space.getEnvironment('master');
+
+        // Fetch all entries of the specified content type
+        const entries = await environment.getEntries({
+            content_type: contentTypeName
+        });
+
+        console.log(`Found ${entries.items.length} entries to delete.`);
+
+        // First unpublish all entries
+        console.log('Unpublishing entries...');
+        for (const entry of entries.items) {
+            try {
+                if (entry.isPublished()) {
+                    await entry.unpublish();
+                    console.log(`Unpublished entry: ${entry.sys.id}`);
+                }
+            } catch (error) {
+                console.error(`Error unpublishing entry ${entry.sys.id}:`, error.message);
+            }
+        }
+
+        // Then delete all entries
+        console.log('Deleting entries...');
+        for (const entry of entries.items) {
+            try {
+                await entry.delete();
+                console.log(`Deleted entry: ${entry.sys.id}`);
+            } catch (error) {
+                console.error(`Error deleting entry ${entry.sys.id}:`, error.message);
+            }
+        }
+
+        console.log(`Successfully deleted all ${contentTypeName} entries.`);
+    } catch (error) {
+        console.error(`Error deleting ${contentTypeName} entries:`, error);
+        throw error;
+    }
+}
+
+async function confirmDeletion(contentTypeName) {
+    return new Promise((resolve) => {
+        readline.question(
+            `⚠️  WARNING: This will delete ALL entries of type "${contentTypeName}". This action cannot be undone!\n` +
+            'Are you sure you want to proceed? (yes/no): ',
+            (answer) => {
+                readline.close();
+                resolve(answer.toLowerCase() === 'yes');
+            }
+        );
+    });
+}
+module.exports = { parseTemplateFile, listContentTypes, getContentModelFields, getContentTypeFields, helloWorld, parsePhotos, checkApiEndpoint, fetchAllContent, confirmDeletion, deleteAllEntriesOfType };
