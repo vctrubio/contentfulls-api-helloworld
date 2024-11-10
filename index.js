@@ -3,7 +3,7 @@ const fs = require('fs').promises;
 const path = require('path');
 const { parseTemplateFile, listContentTypes, getContentModelFields, parsePhotos, checkApiEndpoint, getContentTypeFields, fetchAllContent } = require('./utils');
 
-async function waitForAssetProcessing(asset, maxAttempts = 10) {
+async function waitForAssetProcessing(asset, maxAttempts = 2) {
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
         try {
             console.log(`Processing attempt ${attempt + 1}/${maxAttempts}...`);
@@ -38,16 +38,15 @@ async function uploadPhoto(environment, photoPath) {
         const fileBuffer = await fs.readFile(photoPath);
         const fileSizeInMB = fileBuffer.length / (1024 * 1024);
 
-        // Log file info
         console.log(`Processing ${fileName} (${fileSizeInMB.toFixed(2)}MB)`);
 
-        // Create upload first
+        // Create upload
         console.log('Creating upload...');
         const upload = await environment.createUpload({
             file: fileBuffer
         });
 
-        // Create the asset with correct link type
+        // Create the asset with uploadFrom instead of upload URL
         console.log(`Creating asset for ${fileName}...`);
         const asset = await environment.createAsset({
             fields: {
@@ -61,7 +60,13 @@ async function uploadPhoto(environment, photoPath) {
                     'en-US': {
                         contentType: contentType,
                         fileName: fileName,
-                        upload: `https://upload.contentful.com/spaces/${process.env.CONTENTFUL_SPACE_ID}/uploads/${upload.sys.id}`
+                        uploadFrom: {
+                            sys: {
+                                type: 'Link',
+                                linkType: 'Upload',
+                                id: upload.sys.id
+                            }
+                        }
                     }
                 }
             }
@@ -76,9 +81,9 @@ async function uploadPhoto(environment, photoPath) {
         console.log(`Successfully uploaded and published photo: ${fileName}`);
         return publishedAsset;
     } catch (error) {
-        console.error('Error uploading photo:', error);
+        console.error('Error uploading photo:', error.message);
         console.error('Photo path:', photoPath);
-        throw error;
+        return null;  // Return null instead of throwing to continue with other photos
     }
 }
 
@@ -105,6 +110,9 @@ async function postMuralEntry(templateData, photos, dirPath) {
                         id: asset.sys.id
                     }
                 });
+            }
+            else{
+                console.log(`BIG FAT ERROR:Failed to upload photo: ${photo}`);
             }
         }
 
@@ -148,7 +156,7 @@ async function postMuralEntry(templateData, photos, dirPath) {
 }
 
 // Function to process all templates in the directory
-async function processTemplateDirectory(directoryPath) {
+async function processTemplateDirectory(directoryPath = path.join(__dirname, 'contentfull_data_post')) {
     try {
         const directories = await fs.readdir(directoryPath);
 
@@ -184,7 +192,7 @@ async function processTemplateDirectory(directoryPath) {
     }
 }
 
-async function trigger(flag = false) {
+async function trigger(flag = true) {
     const directoryPath = path.join(__dirname, 'contentfull_data_post');
 
     try {
@@ -221,7 +229,6 @@ async function trigger(flag = false) {
             }
         }
 
-        // Process new content if needed
         // console.log('\nProcessing new content...');
         // await processTemplateDirectory(directoryPath);
         // console.log('All templates processed successfully');
@@ -268,12 +275,11 @@ async function main() {
             case 'trigger':
                 await trigger();
                 break;
+            case 'pt':
+                await processTemplateDirectory();
+                break;
             case 'checkApi':
                 await checkApiAndContentTypes();
-                break;
-            case 'processTemplates':
-                const directoryPath = path.join(__dirname, 'contentfull_data_post');
-                await processTemplateDirectory(directoryPath);
                 break;
             default:
                 console.log('\x1b[31m%s\x1b[0m', `Unknown command: ${command}`);
@@ -287,3 +293,5 @@ async function main() {
 
 main();
 
+
+const directoryPath = path.join(__dirname, 'contentfull_data_post');
