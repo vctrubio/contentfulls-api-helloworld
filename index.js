@@ -184,39 +184,41 @@ async function processTemplateDirectory(directoryPath) {
     }
 }
 
-async function trigger() {
+async function trigger(flag = false) {
     const directoryPath = path.join(__dirname, 'contentfull_data_post');
 
     try {
         // Fetch all content first
-        console.log('\nFetching all existing content...');
-        const allContent = await fetchAllContent();
-        
-        // Log summary of content
-        Object.entries(allContent).forEach(([contentTypeName, data]) => {
-            console.log(`\n${contentTypeName}:`);
-            console.log(`- Total entries: ${data.entries.length}`);
-            console.log('- Fields:', data.fields.map(f => f.name).join(', '));
-        });
-        // Check if Mural content type exists and log detailed information
-        if (allContent['Mural']) {
-            console.log('\nDetailed Mural Entries:');
-            allContent['Mural'].entries.forEach((entry, index) => {
-                console.log(`\nMural Entry ${index + 1}:`);
-                Object.entries(entry.fields).forEach(([fieldName, fieldValue]) => {
-                    if (fieldValue['en-US']) {
-                        if (Array.isArray(fieldValue['en-US'])) {
-                            console.log(`${fieldName}:`, fieldValue['en-US'].length > 0 ? 
-                                `[${fieldValue['en-US'].map(item => 
-                                    item.sys ? `Asset ID: ${item.sys.id}` : item
-                                ).join(', ')}]` : '[]'
-                            );
-                        } else {
-                            console.log(`${fieldName}:`, fieldValue['en-US']);
-                        }
-                    }
-                });
+        if (flag) {
+            console.log('\nFetching all existing content...');
+            const allContent = await fetchAllContent();
+
+            // Log summary of content
+            Object.entries(allContent).forEach(([contentTypeName, data]) => {
+                console.log(`\n${contentTypeName}:`);
+                console.log(`- Total entries: ${data.entries.length}`);
+                console.log('- Fields:', data.fields.map(f => f.name).join(', '));
             });
+            // Check if Mural content type exists and log detailed information
+            if (allContent['Mural']) {
+                console.log('\nDetailed Mural Entries:');
+                allContent['Mural'].entries.forEach((entry, index) => {
+                    console.log(`\nMural Entry ${index + 1}:`);
+                    Object.entries(entry.fields).forEach(([fieldName, fieldValue]) => {
+                        if (fieldValue['en-US']) {
+                            if (Array.isArray(fieldValue['en-US'])) {
+                                console.log(`${fieldName}:`, fieldValue['en-US'].length > 0 ?
+                                    `[${fieldValue['en-US'].map(item =>
+                                        item.sys ? `Asset ID: ${item.sys.id}` : item
+                                    ).join(', ')}]` : '[]'
+                                );
+                            } else {
+                                console.log(`${fieldName}:`, fieldValue['en-US']);
+                            }
+                        }
+                    });
+                });
+            }
         }
 
         // Process new content if needed
@@ -229,9 +231,6 @@ async function trigger() {
     }
 }
 
-trigger()
-
-///////////////////////////////////////////////////////////////////////////
 async function checkApiAndContentTypes() {
     console.log('Starting API and content type checks...');
 
@@ -258,4 +257,33 @@ async function checkApiAndContentTypes() {
     }
 }
 
-// checkApiAndContentTypes()
+async function main() {
+    console.log('hello n welcome.')
+
+    const args = process.argv.slice(2);
+    const command = args[0]; // The first argument is the command
+
+    try {
+        switch (command) {
+            case 'trigger':
+                await triggera();
+                break;
+            case 'checkApi':
+                await checkApiAndContentTypes();
+                break;
+            case 'processTemplates':
+                const directoryPath = path.join(__dirname, 'contentfull_data_post');
+                await processTemplateDirectory(directoryPath);
+                break;
+            default:
+                console.log('\x1b[31m%s\x1b[0m', `Unknown command: ${command}`);
+                console.log('Available commands: trigger, checkApi, processTemplates');
+                break;
+        }
+    } catch (error) {
+        console.error('Error executing command:', error); //error is an object that can be unpacked with .message and .stack ...
+    }
+}
+
+main();
+
