@@ -237,10 +237,14 @@ async function deleteAllEntriesOfType(contentTypeName) {
     }
 }
 
-async function confirmDeletion(contentTypeName) {
+async function confirmDeletion(itemType) {
     return new Promise((resolve) => {
+        let warningMessage = `⚠️  WARNING: This will delete ALL entries of type "${itemType}". This action cannot be undone!\n`;
+        if (itemType === 'assets') {
+            warningMessage = `⚠️  WARNING: This will delete ALL assets. This action cannot be undone!\n`;
+        }
         readline.question(
-            `⚠️  WARNING: This will delete ALL entries of type "${contentTypeName}". This action cannot be undone!\n` +
+            warningMessage +
             'Are you sure you want to proceed? (yes/no): ',
             (answer) => {
                 readline.close();
@@ -249,4 +253,52 @@ async function confirmDeletion(contentTypeName) {
         );
     });
 }
-module.exports = { parseTemplateFile, listContentTypes, getContentModelFields, getContentTypeFields, helloWorld, parsePhotos, checkApiEndpoint, fetchAllContent, confirmDeletion, deleteAllEntriesOfType };
+
+async function deleteAllAssets() {
+    try {
+        console.log('Starting deletion of all assets...');
+
+        const client = contentful.createClient({
+            accessToken: process.env.CONTENTFUL_MANAGEMENT_TOKEN
+        });
+
+        const space = await client.getSpace(process.env.CONTENTFUL_SPACE_ID);
+        const environment = await space.getEnvironment('master');
+
+        // Fetch all assets
+        const assets = await environment.getAssets();
+
+        console.log(`Found ${assets.items.length} assets to delete.`);
+
+        // First unpublish all assets
+        console.log('Unpublishing assets...');
+        for (const asset of assets.items) {
+            try {
+                if (asset.isPublished()) {
+                    await asset.unpublish();
+                    console.log(`Unpublished asset: ${asset.sys.id}`);
+                }
+            } catch (error) {
+                console.error(`Error unpublishing asset ${asset.sys.id}:`, error.message);
+            }
+        }
+
+        // Then delete all assets
+        console.log('Deleting assets...');
+        for (const asset of assets.items) {
+            try {
+                await asset.delete();
+                console.log(`Deleted asset: ${asset.sys.id}`);
+            } catch (error) {
+                console.error(`Error deleting asset ${asset.sys.id}:`, error.message);
+            }
+        }
+
+        console.log('Successfully deleted all assets.');
+    } catch (error) {
+        console.error('Error deleting assets:', error);
+        throw error;
+    }
+}
+
+module.exports = { parseTemplateFile, listContentTypes, getContentModelFields, getContentTypeFields, helloWorld, parsePhotos, checkApiEndpoint, fetchAllContent, confirmDeletion, deleteAllEntriesOfType, deleteAllAssets };

@@ -1,7 +1,7 @@
 const contentful = require('contentful-management');
 const fs = require('fs').promises;
 const path = require('path');
-const { parseTemplateFile, listContentTypes, getContentModelFields, parsePhotos, checkApiEndpoint, getContentTypeFields, fetchAllContent, confirmDeletion, deleteAllEntriesOfType } = require('./utils');
+const { parseTemplateFile, listContentTypes, getContentModelFields, parsePhotos, checkApiEndpoint, getContentTypeFields, fetchAllContent, confirmDeletion, deleteAllEntriesOfType, deleteAllAssets } = require('./utils');
 const process = require('process');
 
 let existingTitles = new Set(); // Store existing titles
@@ -243,7 +243,7 @@ async function trigger(flag = true) {
                 console.log('- Fields:', data.fields.map(f => f.name).join(', '));
             });
             // Check if Mural content type exists and log detailed information
-            if (allContent['Mural']) {
+            if (allContent['Mural'] || allContent['mural']) {
                 console.log('\nDetailed Mural Entries:');
                 allContent['Mural'].entries.forEach((entry, index) => {
                     console.log(`\nMural Entry ${index + 1}:`);
@@ -324,6 +324,14 @@ async function main() {
                 const confirmed = await confirmDeletion(contentType);
                 if (confirmed) {
                     await deleteAllEntriesOfType(contentType);
+                } else {
+                    console.log('Deletion cancelled.');
+                }
+                break;
+            case 'delete-assets':
+                const confirmedAssets = await confirmDeletion('assets');
+                if (confirmedAssets) {
+                    await deleteAllAssets();
                 } else {
                     console.log('Deletion cancelled.');
                 }
